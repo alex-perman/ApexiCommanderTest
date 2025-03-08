@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../ApexiCommanderGFX"
+		},
+		{
+			"name": "ApexiCommanderTest",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
