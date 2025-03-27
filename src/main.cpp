@@ -51,6 +51,9 @@ const bool BOOTSCREEN = true;
 // CAN Setup
 CanFrame rxFrame;
 
+// Preferences
+Preferences preferences;
+
 // Cup position variables
 float cupX = 64;
 float accelTarget = 0.8;
@@ -97,9 +100,29 @@ int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPress
 
 // Menus
 int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
-int customCANID[12];                // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
+uint8_t customCANID[12] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};                // Stores *CUSTOM* CANBUS ID of all parameters as set by user
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
+int paramCursor = 0;                // set up to start at zero and count to 7 for each parameter selected.
 
+/***************** PREFERENCES *********************/
+void saveCANIDS() {
+    preferences.begin("myApp", false);
+    preferences.putBytes("customCANIDs", customCANID, sizeof(customCANID));
+    preferences.end();
+}
+
+void loadCANIDS() {
+    preferences.begin("myApp", true);
+    size_t bytesRead = preferences.getBytes("customCANIDs", customCANID, sizeof(customCANID));
+    
+    if (bytesRead != sizeof(customCANID)) {
+        memset(customCANID, 0, sizeof(customCANID));
+    }
+
+    preferences.end();
+}
+/***************************************************/
 
 void u8g2_prepare(void) {
   //u8g2.setFont(u8g2_font_lord_mr);
@@ -244,12 +267,14 @@ void cupTest() {
     delay(16);  // ~60 FPS
 }
 
+/************************* MENU SELECTION **************************/
+
 void menuSelection(int menuNum) {
     int x, y, width, height;
     int xShift, yShift;
     switch (menuNum)
     {
-    case 0:             // Main Menu
+    case 00:             // Main Menu
         x = 15;
         y = 6;
         width = 99;
@@ -268,7 +293,7 @@ void menuSelection(int menuNum) {
             }
         }
         break;
-    case 1:         // Channel Select Menu
+    case 10:         // Channel Select Menu
         x = 30;
         y = 12;
         width = 70;
@@ -287,7 +312,7 @@ void menuSelection(int menuNum) {
             }
         }
         break;
-    case 2:         // CAN ID Config Menu
+    case 20:         // CAN ID Config Menu
         x = 3;
         y = 7;
         width = 60;
@@ -311,8 +336,19 @@ void menuSelection(int menuNum) {
                 menuPos[0] = mod(menuPos[0] + 1, 2);
             }
         }
+        char buffer[1];
+        if (getSW(RIGHT_SW) && paramCursor < 8) {               // this shit needs to REMEMBER LOL ya glhf gn
+            size_t index = menuPos[1] + 4 * menuPos[0];
+            selectedCANID[index] = paramCursor;
+            paramCursor++;
+            sprintf(buffer, "%d", paramCursor);
+            while (getSW(RIGHT_SW)) {
+            }
+        }
+        else { sprintf(buffer, ""); }
+        u8g2.drawStr((x + 3) + menuPos[0] * xShift, (y + 1) + menuPos[1] * yShift, buffer);
         break;
-    case 3:         // Mode/ETC Select Menu
+    case 30:         // Mode/ETC Select Menu
         x = 20;
         y = 8;
         width = 90;
@@ -346,7 +382,7 @@ void mainMenu() {
     u8g2.clearBuffer();
     u8g2.drawXBMP(0, 0, 128, 64, screen_0_main_menu);
 
-    menuSelection(0);
+    menuSelection(00);
 
     u8g2.sendBuffer();
 
@@ -357,7 +393,7 @@ void chanSelect() {
     u8g2.clearBuffer();
     u8g2.drawXBMP(0, 0, 128, 64, screen_1_channel_select);
 
-    menuSelection(1);
+    menuSelection(10);
 
     u8g2.sendBuffer();
 
@@ -368,7 +404,7 @@ void canID_config() {
     u8g2.clearBuffer();
     u8g2.drawXBMP(0, 0, 128, 64, screen_3_data_select);
 
-    menuSelection(2);
+    menuSelection(20);
 
     if (getSW(LEFT_SW)) {
 
@@ -382,8 +418,35 @@ void canID_config() {
 void setCANID() {
     u8g2.clearBuffer();
 
-    u8g2.drawStr(20, 24, "Set CANBUS ID for: ");
-    u8g2.drawStr(30, 32, "0x");
+
+    char buffer[50];
+    // Add bounds checking
+    size_t index = menuPos[1] + 4 * menuPos[0];
+    if (index < 8) {  // Assuming paramList has 8 elements
+        u8g2.drawStr(4, 4, "Set CANBUS ID for:");
+        snprintf(buffer, sizeof(buffer), "%s", paramList[index]);
+        u8g2.drawStr(4, 13, buffer);
+    } else {
+        // Handle error - index out of bounds
+        u8g2.drawStr(9, 10, "Invalid Selection");
+    }
+
+    u8g2.setFont(u8g2_font_ncenB14_tr);
+    sprintf(buffer, "0x%02X", customCANID[index]);
+    u8g2.drawStr(32, 32, buffer);
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+
+
+    if (getSW(UP_SW)) {
+        customCANID[index] = customCANID[index] + 0x01;
+        while(getSW(UP_SW)) {
+        }
+    }
+    if (getSW(DOWN_SW)) {
+        customCANID[index] = customCANID[index] - 0x01;
+        while(getSW(DOWN_SW)) {
+        }
+    }
 
     u8g2.sendBuffer();
     delay(16);
@@ -393,11 +456,7 @@ void modeMenu() {
     u8g2.clearBuffer();
     u8g2.drawXBMP(0, 0, 128, 64, screen_2_etc_mode);
 
-    menuSelection(3);
-
-    if (getSW(RIGHT_SW)) {
-
-    }
+    menuSelection(30);
 
     u8g2.sendBuffer();
 
@@ -446,6 +505,7 @@ void doMenus() {
                 menuPos[0] = 0;
                 menuPos[1] = 0;
                 menuPos[2] = 20;
+                paramCursor = 0;
                 break;
             case 2:
                 menuPos[0] = 0;
@@ -454,6 +514,25 @@ void doMenus() {
             default:
                 break;
             }
+            while (getSW(NEXT_SW)) {
+            }
+        }
+        else if (menuPos[2] == 20) {
+            saveCANIDS();
+            //u8g2.setDrawColor(0);
+            //u8g2.drawBox(32, 16, 64, 32);
+            u8g2.clearBuffer();
+            u8g2.setFont(u8g2_font_ncenB14_tr);
+            u8g2.drawStr(37, 25, "Saved!");
+            u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+            u8g2.drawStr(49, 21, "CAN IDs");
+            u8g2.sendBuffer();
+            delay(500);
+
+            menuPos[0] = 0;
+            menuPos[1] = 0;
+            menuPos[2] = 00;    // GOTO main menu
+
             while (getSW(NEXT_SW)) {
             }
         }
@@ -584,6 +663,7 @@ void setup() {
     Serial.println("Serial monitor started!");
     u8g2_prepare();
     canSetup();                                 // Setup CANBUS
+    loadCANIDS();                               // Load CANIDs into memory from flash
     digitalWrite(SCREEN_ON, HIGH);
 
     //u8g2.setFont(u8g2_font_lord_mr);
