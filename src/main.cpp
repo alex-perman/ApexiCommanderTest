@@ -21,6 +21,7 @@ SETTING
 |   |   |   OilTemp         (Oil Temperature)           [degC]
 |   |   |   AirTemp         (Intake Air Temperature)    [degC]
 |   |   |   BatVolt         (Battery Voltage)           [V]
+|   |   |   Lambda          (Air Fuel Ratio Lambda)     []
 ETC
 |   Units
 |   |   Metric
@@ -34,6 +35,7 @@ ETC
 #include "bitmaps.h"
 #include "CAN_Display.h"
 #include "CCfonts.h"
+#include <Preferences.h>
 
 #ifdef U8X8_HAVE_HW_SPI
 #include <SPI.h>
@@ -94,11 +96,14 @@ CAN_Display LCD(displayCount);
 int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPresses = 0, nextPresses = 0;
 
 // Menus
-int menuPos[3] = {0, 0, 0};        // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
+int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
+int customCANID[12];                // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
 
 
 void u8g2_prepare(void) {
-  u8g2.setFont(u8g2_font_lord_mr);
+  //u8g2.setFont(u8g2_font_lord_mr);
+  u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
   u8g2.setFontRefHeightExtendedText();
   u8g2.setDrawColor(1);
   u8g2.setFontPosTop();
@@ -282,7 +287,32 @@ void menuSelection(int menuNum) {
             }
         }
         break;
-    case 2:         // Mode/ETC Select Menu
+    case 2:         // CAN ID Config Menu
+        x = 3;
+        y = 7;
+        width = 60;
+        height = 9;
+        xShift = 62;
+        yShift = 10;
+
+        if (getSW(UP_SW)) {
+            menuPos[1] = mod(menuPos[1] - 1, 4);
+            while (getSW(UP_SW)) {
+            }
+            if(menuPos[1] == 3) {
+                menuPos[0] = mod(menuPos[0] - 1, 2);
+            }
+        }
+        if (getSW(DOWN_SW)) {
+            menuPos[1] = mod(menuPos[1] + 1, 4);
+            while (getSW(DOWN_SW)) {
+            }
+            if(menuPos[1] == 0) {
+                menuPos[0] = mod(menuPos[0] + 1, 2);
+            }
+        }
+        break;
+    case 3:         // Mode/ETC Select Menu
         x = 20;
         y = 8;
         width = 90;
@@ -334,11 +364,40 @@ void chanSelect() {
     delay(16); // ~60fps
 }
 
+void canID_config() {
+    u8g2.clearBuffer();
+    u8g2.drawXBMP(0, 0, 128, 64, screen_3_data_select);
+
+    menuSelection(2);
+
+    if (getSW(LEFT_SW)) {
+
+    }
+
+    u8g2.sendBuffer();
+
+    delay(16); // ~60fps
+}
+
+void setCANID() {
+    u8g2.clearBuffer();
+
+    u8g2.drawStr(20, 24, "Set CANBUS ID for: ");
+    u8g2.drawStr(30, 32, "0x");
+
+    u8g2.sendBuffer();
+    delay(16);
+}
+
 void modeMenu() {
     u8g2.clearBuffer();
     u8g2.drawXBMP(0, 0, 128, 64, screen_2_etc_mode);
 
-    menuSelection(2);
+    menuSelection(3);
+
+    if (getSW(RIGHT_SW)) {
+
+    }
 
     u8g2.sendBuffer();
 
@@ -348,35 +407,50 @@ void modeMenu() {
 void doMenus() {
     switch (menuPos[2])
     {
-    case 0:
+    case 00:
         mainMenu();
         break;
-    case 1:
+    case 10:
         chanSelect();
         break;
-    case 2:
+    case 20:
+        canID_config();
+        break;
+    case 21:
+        setCANID();
+        break;
+    case 30:
         modeMenu();
         break;
     default:
         break;
     }
 
+    if (getSW(LEFT_SW)) {
+        if (menuPos[2] == 20) {
+            menuPos[2] = 21;
+        }
+    }
+
     if (getSW(NEXT_SW)) {
-        if (menuPos[2] == 0) {
+        if (menuPos[2] == 00) {
             switch (menuPos[1])
             {
             case 0:
                 menuPos[0] = 0;
                 menuPos[1] = 0;
-                menuPos[2] = 1;
+                menuPos[2] = 10;
                 break;
             case 1:
                 // Settings here
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 20;
                 break;
             case 2:
                 menuPos[0] = 0;
                 menuPos[1] = 0;
-                menuPos[2] = 2;
+                menuPos[2] = 30;
             default:
                 break;
             }
@@ -385,9 +459,14 @@ void doMenus() {
         }
     }
     else if (getSW(PREV_SW)) {
-        menuPos[0] = 0;
-        menuPos[1] = 0;
-        menuPos[2] = 0;
+        if (menuPos[2] == 21) {
+            menuPos[2] = 20;
+        }
+        else {
+            menuPos[0] = 0;
+            menuPos[1] = 0;
+            menuPos[2] = 00;
+        }
         while (getSW(PREV_SW)) {
         }
     }
@@ -443,7 +522,7 @@ void canbusTest() {
         // Serial.printf("%03X ", rxFrame.identifier);
         // if (rxFrame.rtr) { Serial.printf("%X", rxFrame.data); }
 
-        if(rxFrame.identifier == 0x7E8) {   // Standard OBD2 frame responce ID
+        if(rxFrame.identifier == 0x7E8) {   // Standard OBD2 frame response ID
             Serial.printf("Coolant temp: %3d°C \r\n", rxFrame.data[3] - 40); // Convert to °C
         }
 
@@ -507,7 +586,8 @@ void setup() {
     canSetup();                                 // Setup CANBUS
     digitalWrite(SCREEN_ON, HIGH);
 
-    u8g2.setFont(u8g2_font_lord_mr);
+    //u8g2.setFont(u8g2_font_lord_mr);
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
 
     if (BOOTSCREEN) {
         u8g2.clearBuffer();
@@ -523,8 +603,8 @@ void setup() {
 void loop() {
     //buttonTest();
     //cupTest();
-    //doMenus();
+    doMenus();
     //canbusTest();
-    displayTest();
-
+    //displayTest();
+    //canID_config();
 }
