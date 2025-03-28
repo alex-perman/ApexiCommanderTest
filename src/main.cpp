@@ -103,21 +103,32 @@ int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = setting
 const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
 uint8_t customCANID[12] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};                // Stores *CUSTOM* CANBUS ID of all parameters as set by user
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
-int paramCursor = 0;                // set up to start at zero and count to 7 for each parameter selected.
+int paramCursor = 8;                // set up to start at zero and count to 7 for each parameter selected.
+int paramLocation[8][2];
 
 /***************** PREFERENCES *********************/
 void saveCANIDS() {
     preferences.begin("myApp", false);
     preferences.putBytes("customCANIDs", customCANID, sizeof(customCANID));
+    preferences.putBytes("selectedCANIDs", selectedCANID, sizeof(selectedCANID));
+    preferences.putBytes("paramLocation", paramLocation, sizeof(paramLocation));
     preferences.end();
 }
 
 void loadCANIDS() {
     preferences.begin("myApp", true);
-    size_t bytesRead = preferences.getBytes("customCANIDs", customCANID, sizeof(customCANID));
+    size_t customBytes = preferences.getBytes("customCANIDs", customCANID, sizeof(customCANID));
+    size_t selectedBytes = preferences.getBytes("selectedCANIDs", selectedCANID, sizeof(selectedCANID));
+    size_t locationBytes = preferences.getBytes("paramLocation", paramLocation, sizeof(paramLocation));
     
-    if (bytesRead != sizeof(customCANID)) {
+    if (customBytes != sizeof(customCANID)) {
         memset(customCANID, 0, sizeof(customCANID));
+    }
+    if (selectedBytes != sizeof(selectedCANID)) {
+        memset(selectedCANID, 0, sizeof(selectedCANID));
+    }
+    if (locationBytes != sizeof(paramLocation)) {
+        memset(paramLocation, 0, sizeof(paramLocation));
     }
 
     preferences.end();
@@ -336,17 +347,29 @@ void menuSelection(int menuNum) {
                 menuPos[0] = mod(menuPos[0] + 1, 2);
             }
         }
-        char buffer[1];
-        if (getSW(RIGHT_SW) && paramCursor < 8) {               // this shit needs to REMEMBER LOL ya glhf gn
+        
+        if (getSW(LEFT_SW)) {               // this shit needs to REMEMBER LOL ya glhf gn EDIT FIXED LFGGG
+            if (paramCursor == 8) { 
+                paramCursor = 0; 
+                memset(selectedCANID, -1, sizeof(selectedCANID));    // clear array
+            }
             size_t index = menuPos[1] + 4 * menuPos[0];
-            selectedCANID[index] = paramCursor;
-            paramCursor++;
-            sprintf(buffer, "%d", paramCursor);
-            while (getSW(RIGHT_SW)) {
+            if (selectedCANID[index] == -1) {
+                selectedCANID[index] = paramCursor;
+                paramLocation[paramCursor][0] = menuPos[0];         // Store X location
+                paramLocation[paramCursor][1] = menuPos[1];         // Store Y location
+                paramCursor++;
+            }
+
+            while (getSW(LEFT_SW)) {
             }
         }
-        else { sprintf(buffer, ""); }
-        u8g2.drawStr((x + 3) + menuPos[0] * xShift, (y + 1) + menuPos[1] * yShift, buffer);
+
+        char buffer[5];
+        for (int i=0; i<paramCursor; i++) {
+            sprintf(buffer, "%d", i+1);
+            u8g2.drawStr((x + 3) + paramLocation[i][0] * xShift, y + paramLocation[i][1] * yShift, buffer); 
+        }
         break;
     case 30:         // Mode/ETC Select Menu
         x = 20;
@@ -485,7 +508,7 @@ void doMenus() {
         break;
     }
 
-    if (getSW(LEFT_SW)) {
+    if (getSW(RIGHT_SW)) {
         if (menuPos[2] == 20) {
             menuPos[2] = 21;
         }
@@ -505,7 +528,7 @@ void doMenus() {
                 menuPos[0] = 0;
                 menuPos[1] = 0;
                 menuPos[2] = 20;
-                paramCursor = 0;
+                //paramCursor = 8;
                 break;
             case 2:
                 menuPos[0] = 0;
