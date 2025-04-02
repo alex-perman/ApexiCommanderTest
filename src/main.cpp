@@ -19,6 +19,7 @@ SETTING
 |   |   |   Knock           (Detonation Level)          [!!!]
 |   |   |   WtrTemp         (Water Temperature)         [degC]
 |   |   |   OilTemp         (Oil Temperature)           [degC]
+|   |   |   OilPres         (Oil Pressure)              [bar]
 |   |   |   AirTemp         (Intake Air Temperature)    [degC]
 |   |   |   BatVolt         (Battery Voltage)           [V]
 |   |   |   Lambda          (Air Fuel Ratio Lambda)     []
@@ -143,6 +144,132 @@ void u8g2_prepare(void) {
   u8g2.setFontPosTop();
   u8g2.setFontDirection(0);
 }
+
+/*******************************************
+                CANBUS CODE 
+ *******************************************/
+
+void canSetup() {
+  // Set pins
+  ESP32Can.setPins(CAN_TXD, CAN_RXD);
+
+  // You can set custom size for the queues - those are default
+  ESP32Can.setRxQueueSize(5);
+  ESP32Can.setTxQueueSize(5);
+
+  // .setSpeed() and .begin() functions require to use TwaiSpeed enum,
+  // but you can easily convert it from numerical value using .convertSpeed()
+  ESP32Can.setSpeed(ESP32Can.convertSpeed(500));
+
+  // You can also just use .begin()..
+  if(ESP32Can.begin()) {
+      Serial.println("CAN bus started!");
+  } else {
+      Serial.println("CAN bus failed!");
+  }
+
+  // or override everything in one command;
+  // It is also safe to use .begin() without .end() as it calls it internally
+  if(ESP32Can.begin(ESP32Can.convertSpeed(500), CAN_TXD, CAN_RXD, 10, 10)) {
+      Serial.println("CAN bus started!");
+  } else {
+      Serial.println("CAN bus failed!");
+  }
+}
+
+float getData(int param) {
+    if (ESP32Can.readFrame(rxFrame, 1000)) {
+        if (rxFrame.identifier == customCANID[param]) {
+            switch (param)
+            {
+            case 1:                 // Boost (MAP) [kPa]
+                return rxFrame.data[2];
+                break;
+            case 2:                 // ENG REV [rpm]
+                return (256*rxFrame.data[2]+rxFrame.data[3])/4;
+                break;
+            case 3:                 // Vehicle Speed [km/h]
+                return rxFrame.data[2];
+                break;
+            case 4:                 // Oil Temp [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 5:                 // Water Temp [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 6:                 // IAT [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 7:                 // Battery Voltage [V]
+                return rxFrame.data[2];
+                break;
+
+            default:
+                break;
+            }   
+        }
+
+    }
+}
+
+void canbusTest() {
+    
+    // You can set custom timeout, default is 1000
+    if(ESP32Can.readFrame(rxFrame, 1000)) {
+        // Comment out if too many requests 
+        Serial.printf("%03X,", rxFrame.identifier);
+        Serial.printf("%X,", rxFrame.rtr);
+        Serial.printf("%X,", rxFrame.data_length_code);
+        //Serial.printf("%X", rxFrame.data);
+
+        for (int i = 0; i < rxFrame.data_length_code; i++) {
+          Serial.printf("%X",rxFrame.data[i]);
+        }
+        Serial.printf("\r\n");
+        
+        // Serial.printf("%03X ", rxFrame.identifier);
+        // if (rxFrame.rtr) { Serial.printf("%X", rxFrame.data); }
+
+        if(rxFrame.identifier == 0x7E8) {   // Standard OBD2 frame response ID
+            Serial.printf("Coolant temp: %3d°C \r\n", rxFrame.data[3] - 40); // Convert to °C
+        }
+
+        if(rxFrame.identifier == 0x180) {       // ENGINE RPM
+          //int RPM = (rxFrame.data[3]*256 + rxFrame.data[4])/10;
+        //   int TPS = rxFrame.data[2];
+            u8g2.clearBuffer();
+
+            char buffer[10];
+            if (rxFrame.data[0] == 11) {
+                sprintf(buffer, "%d", rxFrame.data[2]);
+                u8g2.drawStr(0, 10, buffer);
+            }
+            if (rxFrame.data[0] == 10) {
+                sprintf(buffer, "%d", rxFrame.data[1]);
+                u8g2.drawStr(0, 20, buffer);
+            }
+            // if (rxFrame.data[0] == 11) {
+            //     sprintf(buffer, "%d", (float)rxFrame.data[1]);
+            //     u8g2.drawStr(0, 20, buffer);
+            // }
+
+        }
+        // if (rxFrame.identifier == 0x02) {
+        //     char buffer[10];
+        //     if (rxFrame.data[0] == 11) {
+        //         sprintf(buffer, "%d", rxFrame.data[1]);
+        //         u8g2.drawStr(0, 20, buffer);
+        //     }
+        // }
+        else {
+            u8g2.drawStr(0, 20, "NO DATA");
+        }
+    }
+    //u8g2.drawStr(0, 20, "NO DATA");
+    u8g2.sendBuffer();
+}
+
+/************************************************************/
 
 bool getSW(int SW) {
     Serial.println("Button Pressed!");
@@ -354,8 +481,8 @@ void menuSelection(int menuNum) {
                 memset(selectedCANID, -1, sizeof(selectedCANID));    // clear array
             }
             size_t index = menuPos[1] + 4 * menuPos[0];
-            if (selectedCANID[index] == -1) {
-                selectedCANID[index] = paramCursor;
+            if (selectedCANID[paramCursor] == -1) {
+                selectedCANID[paramCursor] = index;
                 paramLocation[paramCursor][0] = menuPos[0];         // Store X location
                 paramLocation[paramCursor][1] = menuPos[1];         // Store Y location
                 paramCursor++;
@@ -486,6 +613,59 @@ void modeMenu() {
     delay(16); // ~60fps
 }
 
+void chan_1() {         // Display the data at customCANID[0]
+    u8g2.clearBuffer();
+
+    //u8g2.setFont(u8g2_font_ncenB14_tr);         // need even bigger text!
+    u8g2.setFont(u8g2_font_timB24_tn);
+    u8g2.drawStr(32, 18, "3581");
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    char buffer[50];
+    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
+    u8g2.drawStr(1, 1, buffer);
+
+    switch (selectedCANID[0])
+    {
+    case 0:                 // Knock
+        u8g2.drawStr(96, 56, "!!!");
+        break;
+    case 1:                 // BOOST
+        u8g2.drawStr(96, 56, "BAR");
+        break;
+    case 2:                 // ENG RPM
+        u8g2.drawStr(96, 56, "RPM");
+    default:
+        break;
+    }
+
+    // Read CANBUS here i guess
+    
+    u8g2.sendBuffer();
+    delay(16);
+}
+
+void chan_2() {         // Display the data at customCANID[0]
+    u8g2.clearBuffer();
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    //u8g2.drawStr("")
+}
+
+void chan_4() {         // Display the data at customCANID[0]
+    u8g2.clearBuffer();
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    //u8g2.drawStr("")
+}
+
+void chan_8() {         // Display the data at customCANID[0]
+    u8g2.clearBuffer();
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    //u8g2.drawStr("")
+}
+
 void doMenus() {
     switch (menuPos[2])
     {
@@ -494,6 +674,18 @@ void doMenus() {
         break;
     case 10:
         chanSelect();
+        break;
+    case 11:
+        chan_1();
+        break;
+    case 12:
+        chan_2();
+        break;
+    case 13:
+        chan_4();
+        break;
+    case 14:
+        chan_8();
         break;
     case 20:
         canID_config();
@@ -528,12 +720,46 @@ void doMenus() {
                 menuPos[0] = 0;
                 menuPos[1] = 0;
                 menuPos[2] = 20;
-                //paramCursor = 8;
+                loadCANIDS();
+                paramCursor = 8;
                 break;
             case 2:
                 menuPos[0] = 0;
                 menuPos[1] = 0;
                 menuPos[2] = 30;
+                break;
+            default:
+                break;
+            }
+            while (getSW(NEXT_SW)) {
+            }
+        }
+        else if (menuPos[2] == 10) {
+            switch (menuPos[1])
+            {
+            case 0:                 // 1 Channel
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 11;
+                break;
+            case 1:                 // 2 Channel
+                // Settings here
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 12;
+                loadCANIDS();
+                paramCursor = 8;
+                break;
+            case 2:                 // 4 Channel
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 13;
+                break;
+            case 3:                 // 8 Channel
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 14;
+                break;
             default:
                 break;
             }
@@ -541,20 +767,32 @@ void doMenus() {
             }
         }
         else if (menuPos[2] == 20) {
-            saveCANIDS();
-            //u8g2.setDrawColor(0);
-            //u8g2.drawBox(32, 16, 64, 32);
             u8g2.clearBuffer();
-            u8g2.setFont(u8g2_font_ncenB14_tr);
-            u8g2.drawStr(37, 25, "Saved!");
-            u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-            u8g2.drawStr(49, 21, "CAN IDs");
-            u8g2.sendBuffer();
-            delay(500);
+            if (paramCursor == 8) {
+                saveCANIDS();
+                //u8g2.setDrawColor(0);
+                //u8g2.drawBox(32, 16, 64, 32);
+                u8g2.setFont(u8g2_font_ncenB14_tr);
+                u8g2.drawStr(37, 25, "Saved!");
+                u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+                u8g2.drawStr(49, 21, "CAN IDs");
+                u8g2.sendBuffer();
+                delay(500);
 
-            menuPos[0] = 0;
-            menuPos[1] = 0;
-            menuPos[2] = 00;    // GOTO main menu
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 00;    // GOTO main menu
+            }
+            else {
+                // DONT saveCANIDS
+                u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+                u8g2.drawStr(5, 21, "Please Select 8");
+                u8g2.drawStr(15, 29, "Parameters!");
+                u8g2.sendBuffer();
+                delay(1500);
+
+                menuPos[2] = 20;    // GOTO main menu
+            }
 
             while (getSW(NEXT_SW)) {
             }
@@ -573,97 +811,6 @@ void doMenus() {
         }
     }
 }
-
-/*******************************************
-                CANBUS CODE 
- *******************************************/
-
-void canSetup() {
-  // Set pins
-  ESP32Can.setPins(CAN_TXD, CAN_RXD);
-
-  // You can set custom size for the queues - those are default
-  ESP32Can.setRxQueueSize(5);
-  ESP32Can.setTxQueueSize(5);
-
-  // .setSpeed() and .begin() functions require to use TwaiSpeed enum,
-  // but you can easily convert it from numerical value using .convertSpeed()
-  ESP32Can.setSpeed(ESP32Can.convertSpeed(500));
-
-  // You can also just use .begin()..
-  if(ESP32Can.begin()) {
-      Serial.println("CAN bus started!");
-  } else {
-      Serial.println("CAN bus failed!");
-  }
-
-  // or override everything in one command;
-  // It is also safe to use .begin() without .end() as it calls it internally
-  if(ESP32Can.begin(ESP32Can.convertSpeed(500), CAN_TXD, CAN_RXD, 10, 10)) {
-      Serial.println("CAN bus started!");
-  } else {
-      Serial.println("CAN bus failed!");
-  }
-}
-
-void canbusTest() {
-    
-    // You can set custom timeout, default is 1000
-    if(ESP32Can.readFrame(rxFrame, 1000)) {
-        // Comment out if too many requests 
-        Serial.printf("%03X,", rxFrame.identifier);
-        Serial.printf("%X,", rxFrame.rtr);
-        Serial.printf("%X,", rxFrame.data_length_code);
-        //Serial.printf("%X", rxFrame.data);
-
-        for (int i = 0; i < rxFrame.data_length_code; i++) {
-          Serial.printf("%X",rxFrame.data[i]);
-        }
-        Serial.printf("\r\n");
-        
-        // Serial.printf("%03X ", rxFrame.identifier);
-        // if (rxFrame.rtr) { Serial.printf("%X", rxFrame.data); }
-
-        if(rxFrame.identifier == 0x7E8) {   // Standard OBD2 frame response ID
-            Serial.printf("Coolant temp: %3d°C \r\n", rxFrame.data[3] - 40); // Convert to °C
-        }
-
-        if(rxFrame.identifier == 0x180) {       // ENGINE RPM
-          //int RPM = (rxFrame.data[3]*256 + rxFrame.data[4])/10;
-        //   int TPS = rxFrame.data[2];
-            u8g2.clearBuffer();
-
-            char buffer[10];
-            if (rxFrame.data[0] == 11) {
-                sprintf(buffer, "%d", rxFrame.data[2]);
-                u8g2.drawStr(0, 10, buffer);
-            }
-            if (rxFrame.data[0] == 10) {
-                sprintf(buffer, "%d", rxFrame.data[1]);
-                u8g2.drawStr(0, 20, buffer);
-            }
-            // if (rxFrame.data[0] == 11) {
-            //     sprintf(buffer, "%d", (float)rxFrame.data[1]);
-            //     u8g2.drawStr(0, 20, buffer);
-            // }
-
-        }
-        // if (rxFrame.identifier == 0x02) {
-        //     char buffer[10];
-        //     if (rxFrame.data[0] == 11) {
-        //         sprintf(buffer, "%d", rxFrame.data[1]);
-        //         u8g2.drawStr(0, 20, buffer);
-        //     }
-        // }
-        else {
-            u8g2.drawStr(0, 20, "NO DATA");
-        }
-    }
-    //u8g2.drawStr(0, 20, "NO DATA");
-    u8g2.sendBuffer();
-}
-
-/************************************************************/
 
 void displayTest() {
     LCD.updateData(0, "Speed", 65.3);
