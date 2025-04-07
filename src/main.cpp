@@ -178,7 +178,7 @@ void canSetup() {
 }
 
 float getData(int param) {
-    if (ESP32Can.readFrame(rxFrame, 1000)) {
+    if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
         if (rxFrame.identifier == customCANID[param]) {
             switch (param)
             {
@@ -209,6 +209,9 @@ float getData(int param) {
             }   
         }
 
+    }
+    else {
+        return -100;    // READ CAN ERROR, DISPLAY ---
     }
 }
 
@@ -613,33 +616,60 @@ void modeMenu() {
     delay(16); // ~60fps
 }
 
-void chan_1() {         // Display the data at customCANID[0]
-    u8g2.clearBuffer();
-
-    //u8g2.setFont(u8g2_font_ncenB14_tr);         // need even bigger text!
-    u8g2.setFont(u8g2_font_timB24_tn);
-    u8g2.drawStr(32, 18, "3581");
-
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    char buffer[50];
-    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
-    u8g2.drawStr(1, 1, buffer);
-
-    switch (selectedCANID[0])
+void dispUnits(int x, int y, int idPos) {       // idPos from 0 to 8 to match selectedCANID[]
+    switch (selectedCANID[idPos])
     {
     case 0:                 // Knock
-        u8g2.drawStr(96, 56, "!!!");
+        u8g2.drawStr(x, y, "!!!");
         break;
     case 1:                 // BOOST
-        u8g2.drawStr(96, 56, "BAR");
+        u8g2.drawStr(x, y, "bar");
         break;
     case 2:                 // ENG RPM
-        u8g2.drawStr(96, 56, "RPM");
+        u8g2.drawStr(x, y, "rpm");
+        break;
+    case 3:                 // SPEED
+        u8g2.drawStr(x, y, "km/h");
+        break;
+    case 4:                 // Oil Temp
+        u8g2.drawStr(x, y, "deg");
+        break;
+    case 5:                 // Water Temp
+        u8g2.drawStr(x, y, "deg");
+        break;
+    case 6:                 // Air Temp
+        u8g2.drawStr(x, y, "deg");
+        break;
+    case 7:                 // Batt Volt
+        u8g2.drawStr(x, y, "V");
+        break;
     default:
         break;
     }
+}
 
+void chan_1() {         // Display the data at customCANID[0]
+    u8g2.clearBuffer();
+    char buffer[50];
     // Read CANBUS here i guess
+    
+    //u8g2.setFont(u8g2_font_ncenB14_tr);         // need even bigger text!
+    u8g2.setFont(u8g2_font_timB24_tn);
+    //u8g2.drawStr(32, 18, "3581");
+    int data = getData(0);
+    if (data == -100) {
+        u8g2.drawStr(32, 18, "---");
+    }
+    else {
+        sprintf(buffer, "%01f", data);
+        u8g2.drawStr(1, 1, buffer);
+    }
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
+    u8g2.drawStr(1, 1, buffer);
+
+    dispUnits(96, 56, 0);
     
     u8g2.sendBuffer();
     delay(16);
@@ -647,9 +677,32 @@ void chan_1() {         // Display the data at customCANID[0]
 
 void chan_2() {         // Display the data at customCANID[0]
     u8g2.clearBuffer();
+    char buffer[50];
+
+    // This can probably be a for loop?????
+
+    // Read Canbus Here
+
+    // First Channel
+    u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+    u8g2.drawStr(24, 10, "54.9");
+    dispUnits(86, 10, 0);
 
     u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    //u8g2.drawStr("")
+    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
+    u8g2.drawStr(1, 1, buffer);
+    
+    // Second Channel
+    u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+    u8g2.drawStr(24, 42, "25");
+    dispUnits(86, 42, 1);
+
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[1]], customCANID[selectedCANID[1]]);
+    u8g2.drawStr(1, 33, buffer);
+
+    u8g2.sendBuffer();
+    delay(16);
 }
 
 void chan_4() {         // Display the data at customCANID[0]
