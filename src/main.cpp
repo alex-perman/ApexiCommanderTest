@@ -33,8 +33,9 @@ ETC
 #include "CanbusCommander.h"
 #include <U8g2lib.h>
 #include <ESP32-TWAI-CAN.hpp>
+#include "driver/twai.h"  // Native ESP32 CAN driver
 #include "bitmaps.h"
-#include "CAN_Display.h"
+#include "CANDataManager.h"
 #include "CCfonts.h"
 #include <Preferences.h>
 
@@ -51,6 +52,7 @@ const bool BOOTSCREEN = true;
 
 // CAN Setup
 CanFrame rxFrame;
+CANDataManager canManager;
 
 // Preferences
 Preferences preferences;
@@ -91,10 +93,6 @@ int mod(int dividend, int divisor) {
 //U8G2_KS0108_128X64_F u8g2(U8G2_R0, 8, 9, 10, 11, 4, 5, 6, 7, /*enable=*/ 18, /*dc=*/ 17, /*cs0=*/ 14, /*cs1=*/ 15, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE); 	// Set R/W to low!
 //U8G2_KS0108_128X64_F u8g2(U8G2_R0, 21, 17, 16, 19, 18, 5, 4, 23, /*enable=*/ 26, /*dc=*/ 25, /*cs0=*/ 22, /*cs1=*/ 14, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE);   // Set R/W to low!
 U8G2_KS0108_128X64_F u8g2(U8G2_R0, 4, 5, 6, 7, 15, 16, 17, 18, /*enable=*/ 10, /*dc=*/ 9, /*cs0=*/ 3, /*cs1=*/ 46, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE);   // Set R/W to low!
-
-// Initialize the LCD for writing data to screen. Default 2 data display
-int displayCount = 4;
-CAN_Display LCD(displayCount);
 
 // Buttons
 int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPresses = 0, nextPresses = 0;
@@ -177,43 +175,71 @@ void canSetup() {
   }
 }
 
-float getData(int param) {
-    if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
-        if (rxFrame.identifier == customCANID[param]) {
-            switch (param)
-            {
-            case 1:                 // Boost (MAP) [kPa]
-                return rxFrame.data[2];
-                break;
-            case 2:                 // ENG REV [rpm]
-                return (256*rxFrame.data[2]+rxFrame.data[3])/4;
-                break;
-            case 3:                 // Vehicle Speed [km/h]
-                return rxFrame.data[2];
-                break;
-            case 4:                 // Oil Temp [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 5:                 // Water Temp [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 6:                 // IAT [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 7:                 // Battery Voltage [V]
-                return rxFrame.data[2];
-                break;
+// float getData(int param) {
+//     twai_message_t message;
 
-            default:
-                break;
-            }   
-        }
+//     // Non-blocking call — returns immediately
+//     if (twai_receive(&message, 0) == ESP_OK) {
+//         if (message.identifier == customCANID[param]) {
+//             switch (param)
+//             {
+//             case 1: // Boost (MAP)
+//                 return message.data[2];
+//             case 2: // RPM
+//                 return (256 * message.data[2] + message.data[3]) / 4.0;
+//             case 3: // Speed
+//                 return message.data[2];
+//             case 4: case 5: case 6: // Temps
+//                 return message.data[2] - 40;
+//             case 7: // Voltage
+//                 return message.data[2];
+//             default:
+//                 return -100;
+//             }
+//         }
+//     }
 
-    }
-    else {
-        return -100;    // READ CAN ERROR, DISPLAY ---
-    }
-}
+//     // No frame or no match
+//     return -100;
+// }
+
+// float getDataOLD(int param) {
+//     if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
+//         if (rxFrame.identifier == customCANID[param]) {
+//             switch (param)
+//             {
+//             case 1:                 // Boost (MAP) [kPa]
+//                 return rxFrame.data[2];
+//                 break;
+//             case 2:                 // ENG REV [rpm]
+//                 return (256*rxFrame.data[2]+rxFrame.data[3])/4;
+//                 break;
+//             case 3:                 // Vehicle Speed [km/h]
+//                 return rxFrame.data[2];
+//                 break;
+//             case 4:                 // Oil Temp [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 5:                 // Water Temp [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 6:                 // IAT [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 7:                 // Battery Voltage [V]
+//                 return rxFrame.data[2];
+//                 break;
+
+//             default:
+//                 break;
+//             }   
+//         }
+
+//     }
+//     else {
+//         return -100;    // READ CAN ERROR, DISPLAY ---
+//     }
+// }
 
 void canbusTest() {
     
@@ -651,18 +677,19 @@ void dispUnits(int x, int y, int idPos) {       // idPos from 0 to 8 to match se
 void chan_1() {         // Display the data at customCANID[0]
     u8g2.clearBuffer();
     char buffer[50];
-    // Read CANBUS here i guess
+    // Read CANBUS here
+    canManager.update();        // Put this outside of 16ms delay if losing frames....
     
     //u8g2.setFont(u8g2_font_ncenB14_tr);         // need even bigger text!
     u8g2.setFont(u8g2_font_timB24_tn);
     //u8g2.drawStr(32, 18, "3581");
-    int data = getData(0);
+    float data = canManager.getData(0);
     if (data == -100) {
         u8g2.drawStr(32, 18, "---");
     }
     else {
         sprintf(buffer, "%01f", data);
-        u8g2.drawStr(1, 1, buffer);
+        u8g2.drawStr(32, 18, buffer);
     }
 
     u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
@@ -682,24 +709,52 @@ void chan_2() {         // Display the data at customCANID[0]
     // This can probably be a for loop?????
 
     // Read Canbus Here
+    canManager.update();
+
+    // Both lol
+    for (int i = 0; i < 2; i++) {
+        u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+
+        float data = canManager.getData(0);
+        if (data == -100) {
+            u8g2.drawStr(24, 10 + 32*i, "---");
+        }
+        else {
+            sprintf(buffer, "%01f", data);
+            u8g2.drawStr(24, 10 + 32*i, buffer);
+        }
+
+        u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+        sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[i]], customCANID[selectedCANID[i]]);
+        u8g2.drawStr(1, 1 + 32*i, buffer);
+    }
 
     // First Channel
-    u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
-    u8g2.drawStr(24, 10, "54.9");
+    // u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+
+    // float data = canManager.getData(0);
+    // if (data == -100) {
+    //     u8g2.drawStr(32, 18, "---");
+    // }
+    // else {
+    //     sprintf(buffer, "%01f", data);
+    //     u8g2.drawStr(1, 1, buffer);
+    // }
+
     dispUnits(86, 10, 0);
 
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
-    u8g2.drawStr(1, 1, buffer);
+    // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
+    // u8g2.drawStr(1, 1, buffer);
     
     // Second Channel
-    u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
-    u8g2.drawStr(24, 42, "25");
+    // u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+    // u8g2.drawStr(24, 42, "25");
     dispUnits(86, 42, 1);
 
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[1]], customCANID[selectedCANID[1]]);
-    u8g2.drawStr(1, 33, buffer);
+    // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[1]], customCANID[selectedCANID[1]]);
+    // u8g2.drawStr(1, 33, buffer);
 
     u8g2.sendBuffer();
     delay(16);
@@ -823,6 +878,9 @@ void doMenus() {
             u8g2.clearBuffer();
             if (paramCursor == 8) {
                 saveCANIDS();
+                for (int i = 0; i < sizeof(customCANID); i++) {
+                    canManager.setCustomID(i, customCANID[i]);       // Load CANIDs into canManager
+                }
                 //u8g2.setDrawColor(0);
                 //u8g2.drawBox(32, 16, 64, 32);
                 u8g2.setFont(u8g2_font_ncenB14_tr);
@@ -865,20 +923,6 @@ void doMenus() {
     }
 }
 
-void displayTest() {
-    LCD.updateData(0, "Speed", 65.3);
-    LCD.updateData(1, "RPM", 2300);
-    LCD.updateData(2, "Temp", 90.5);
-    LCD.updateData(3, "Fuel", 57.2);
-
-    LCD.draw(u8g2);
-    // displayCount = displayCount%4;
-    // displayCount = 2^(displayCount);
-    // LCD.setNumInputs(displayCount);
-    delay(500);
-
-}
-
 void setup() {
     initPins();
     u8g2.begin();
@@ -887,6 +931,12 @@ void setup() {
     u8g2_prepare();
     canSetup();                                 // Setup CANBUS
     loadCANIDS();                               // Load CANIDs into memory from flash
+
+    canManager.begin();
+    for (int i = 0; i < sizeof(customCANID); i++) {
+        canManager.setCustomID(i, customCANID[i]);       // Load CANIDs into canManager
+    }
+
     digitalWrite(SCREEN_ON, HIGH);
 
     //u8g2.setFont(u8g2_font_lord_mr);
