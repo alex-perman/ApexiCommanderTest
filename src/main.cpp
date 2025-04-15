@@ -522,6 +522,7 @@ void menuSelection(int menuNum) {
         }
 
         char buffer[5];
+        u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
         for (int i=0; i<paramCursor; i++) {
             sprintf(buffer, "%d", i+1);
             u8g2.drawStr((x + 3) + paramLocation[i][0] * xShift, y + paramLocation[i][1] * yShift, buffer); 
@@ -702,7 +703,7 @@ void chan_1() {         // Display the data at customCANID[0]
     delay(16);
 }
 
-void chan_2() {         // Display the data at customCANID[0]
+void chan_2() {         // Display the data at customCANID[0] and [1]
     u8g2.clearBuffer();
     char buffer[50];
 
@@ -713,20 +714,22 @@ void chan_2() {         // Display the data at customCANID[0]
 
     // Both lol
     for (int i = 0; i < 2; i++) {
-        u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
-
-        float data = canManager.getData(0);
-        if (data == -100) {
-            u8g2.drawStr(24, 10 + 32*i, "---");
-        }
-        else {
-            sprintf(buffer, "%01f", data);
-            u8g2.drawStr(24, 10 + 32*i, buffer);
-        }
-
         u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
         sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[i]], customCANID[selectedCANID[i]]);
         u8g2.drawStr(1, 1 + 32*i, buffer);
+
+        u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
+        int x = 70;                                 // ez right align
+        float data = canManager.getData(i);
+        if (data == -100) {
+            u8g2.drawStr(x - u8g2.getStrWidth("---"), 10 + 32*i, "---");
+        }
+        else {
+            sprintf(buffer, "%01f", data);
+            u8g2.drawStr(x - u8g2.getStrWidth(buffer), 10 + 32*i, buffer);
+        }
+
+        dispUnits(x + 10, 10 + 32*i, i);
     }
 
     // First Channel
@@ -741,7 +744,7 @@ void chan_2() {         // Display the data at customCANID[0]
     //     u8g2.drawStr(1, 1, buffer);
     // }
 
-    dispUnits(86, 10, 0);
+    //dispUnits(86, 10, 0);
 
     // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
     // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
@@ -750,7 +753,7 @@ void chan_2() {         // Display the data at customCANID[0]
     // Second Channel
     // u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
     // u8g2.drawStr(24, 42, "25");
-    dispUnits(86, 42, 1);
+    //dispUnits(86, 42, 1);
 
     // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
     // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[1]], customCANID[selectedCANID[1]]);
@@ -760,18 +763,68 @@ void chan_2() {         // Display the data at customCANID[0]
     delay(16);
 }
 
-void chan_4() {         // Display the data at customCANID[0]
+void chan_4() {         // Display the data at customCANID[0..3]
     u8g2.clearBuffer();
+    char buffer[50];
 
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    //u8g2.drawStr("")
+    // Read Canbus Here
+    canManager.update();
+
+    // Both lol
+    for (int i = 0; i < 4; i++) {
+        u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+        //sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[i]], customCANID[selectedCANID[i]]);
+        sprintf(buffer, "%s", paramList[selectedCANID[i]]);         // no display canid ~:^( 
+        u8g2.drawStr(45 - u8g2.getStrWidth(buffer), 3 + 16*i, buffer);
+
+        u8g2.setFont(u8g2_font_bytesize_tr);         // 12 pt??
+        int x = 95;                                 // ez right align
+        float data = canManager.getData(i);
+        if (data == -100) {
+            u8g2.drawStr(x - u8g2.getStrWidth("---"), 1 + 16*i, "---");
+        }
+        else {
+            sprintf(buffer, "%01f", data);
+            u8g2.drawStr(x - u8g2.getStrWidth(buffer), 1 + 16*i, buffer);
+        }
+
+        dispUnits(x + 3, 1 + 16*i, i);
+    }
+
+    u8g2.sendBuffer();
+    delay(16);
 }
 
-void chan_8() {         // Display the data at customCANID[0]
+void chan_8() {         // Display the data at customCANID[0..7]
     u8g2.clearBuffer();
+    char buffer[50];
 
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    //u8g2.drawStr("")
+    // Read Canbus Here
+    canManager.update();
+
+    // Both lol
+    for (int i = 0; i < 8; i++) {
+        u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+        //sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[i]], customCANID[selectedCANID[i]]);
+        sprintf(buffer, "%s", paramList[selectedCANID[i]]);         // no display canid ~:^( 
+        u8g2.drawStr(50 - u8g2.getStrWidth(buffer), 8*i, buffer);
+
+        // Same Font
+        int x = 100;                                 // ez right align
+        float data = canManager.getData(i);
+        if (data == -100) {
+            u8g2.drawStr(x - u8g2.getStrWidth("---"), 8*i, "---");
+        }
+        else {
+            sprintf(buffer, "%01f", data);
+            u8g2.drawStr(x - u8g2.getStrWidth(buffer), 8*i, buffer);
+        }
+
+        dispUnits(x + 3, 8*i, i);
+    }
+
+    u8g2.sendBuffer();
+    delay(16);
 }
 
 void doMenus() {
