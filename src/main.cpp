@@ -203,43 +203,43 @@ void canSetup() {
 //     return -100;
 // }
 
-// float getDataOLD(int param) {
-//     if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
-//         if (rxFrame.identifier == customCANID[param]) {
-//             switch (param)
-//             {
-//             case 1:                 // Boost (MAP) [kPa]
-//                 return rxFrame.data[2];
-//                 break;
-//             case 2:                 // ENG REV [rpm]
-//                 return (256*rxFrame.data[2]+rxFrame.data[3])/4;
-//                 break;
-//             case 3:                 // Vehicle Speed [km/h]
-//                 return rxFrame.data[2];
-//                 break;
-//             case 4:                 // Oil Temp [ºC]
-//                 return rxFrame.data[2] - 40;
-//                 break;
-//             case 5:                 // Water Temp [ºC]
-//                 return rxFrame.data[2] - 40;
-//                 break;
-//             case 6:                 // IAT [ºC]
-//                 return rxFrame.data[2] - 40;
-//                 break;
-//             case 7:                 // Battery Voltage [V]
-//                 return rxFrame.data[2];
-//                 break;
+float getDataOLD(int param) {
+    if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
+        if (rxFrame.identifier == customCANID[param]) {
+            switch (param)
+            {
+            case 1:                 // Boost (MAP) [kPa]
+                return rxFrame.data[2];
+                break;
+            case 2:                 // ENG REV [rpm]
+                return (256*rxFrame.data[2]+rxFrame.data[3])/4;
+                break;
+            case 3:                 // Vehicle Speed [km/h]
+                return rxFrame.data[2];
+                break;
+            case 4:                 // Oil Temp [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 5:                 // Water Temp [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 6:                 // IAT [ºC]
+                return rxFrame.data[2] - 40;
+                break;
+            case 7:                 // Battery Voltage [V]
+                return rxFrame.data[2];
+                break;
 
-//             default:
-//                 break;
-//             }   
-//         }
+            default:
+                break;
+            }   
+        }
 
-//     }
-//     else {
-//         return -100;    // READ CAN ERROR, DISPLAY ---
-//     }
-// }
+    }
+    else {
+        return -100;    // READ CAN ERROR, DISPLAY ---
+    }
+}
 
 void canbusTest() {
     
@@ -598,7 +598,6 @@ void canID_config() {
 void setCANID() {
     u8g2.clearBuffer();
 
-
     char buffer[50];
     // Add bounds checking
     size_t index = menuPos[1] + 4 * menuPos[0];
@@ -613,18 +612,27 @@ void setCANID() {
 
     u8g2.setFont(u8g2_font_ncenB14_tr);
     sprintf(buffer, "0x%02X", customCANID[index]);
-    u8g2.drawStr(32, 32, buffer);
+    u8g2.drawStr(64 - u8g2.getStrWidth(buffer)/2, 32, buffer);
     u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
 
+    int digit;
+    if (getSW(LEFT_SW)) { digit = 1; }
+    else if (getSW(RIGHT_SW)) { digit = 0; }
+    else { digit = -1; }
 
-    if (getSW(UP_SW)) {
-        customCANID[index] = customCANID[index] + 0x01;
-        while(getSW(UP_SW)) {
+    if (digit != -1) {
+        u8g2.setDrawColor(2);
+        u8g2.drawBox(64 - u8g2.getStrWidth(buffer)/2 + 14*digit, 57, 15, 2);        // am tired fix this later
+
+        if (getSW(UP_SW)) {
+            customCANID[index] = customCANID[index] + 0x01 << (digit*4);
+            while(getSW(UP_SW)) {
+            }
         }
-    }
-    if (getSW(DOWN_SW)) {
-        customCANID[index] = customCANID[index] - 0x01;
-        while(getSW(DOWN_SW)) {
+        if (getSW(DOWN_SW)) {
+            customCANID[index] = customCANID[index] - 0x01 << (digit*4);
+            while(getSW(DOWN_SW)) {
+            }
         }
     }
 
@@ -725,7 +733,7 @@ void chan_2() {         // Display the data at customCANID[0] and [1]
             u8g2.drawStr(x - u8g2.getStrWidth("---"), 10 + 32*i, "---");
         }
         else {
-            sprintf(buffer, "%01f", data);
+            sprintf(buffer, "%.2f", data);
             u8g2.drawStr(x - u8g2.getStrWidth(buffer), 10 + 32*i, buffer);
         }
 
@@ -899,26 +907,26 @@ void doMenus() {
             switch (menuPos[1])
             {
             case 0:                 // 1 Channel
-                menuPos[0] = 0;
-                menuPos[1] = 0;
+                // menuPos[0] = 0;
+                // menuPos[1] = 0;
                 menuPos[2] = 11;
                 break;
             case 1:                 // 2 Channel
                 // Settings here
-                menuPos[0] = 0;
-                menuPos[1] = 0;
+                // menuPos[0] = 0;
+                // menuPos[1] = 0;
                 menuPos[2] = 12;
                 loadCANIDS();
                 paramCursor = 8;
                 break;
             case 2:                 // 4 Channel
-                menuPos[0] = 0;
-                menuPos[1] = 0;
+                // menuPos[0] = 0;
+                // menuPos[1] = 0;
                 menuPos[2] = 13;
                 break;
             case 3:                 // 8 Channel
-                menuPos[0] = 0;
-                menuPos[1] = 0;
+                // menuPos[0] = 0;
+                // menuPos[1] = 0;
                 menuPos[2] = 14;
                 break;
             default:
@@ -966,6 +974,9 @@ void doMenus() {
         if (menuPos[2] == 21) {
             menuPos[2] = 20;
         }
+        else if (menuPos[2] == 11 || menuPos[2] == 12 || menuPos[2] == 13 || menuPos[2] == 14) {
+            menuPos[2] = 10;
+        }
         else {
             menuPos[0] = 0;
             menuPos[1] = 0;
@@ -980,7 +991,8 @@ void setup() {
     initPins();
     u8g2.begin();
     Serial.begin(115200);
-    Serial.println("Serial monitor started!");
+    while (!Serial) { delay(10); }
+    Serial.print("Serial monitor started!");
     u8g2_prepare();
     canSetup();                                 // Setup CANBUS
     loadCANIDS();                               // Load CANIDs into memory from flash
