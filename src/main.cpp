@@ -100,7 +100,7 @@ int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPress
 // Menus
 int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
 const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
-uint8_t customCANID[12] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};                // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+uint8_t customCANID[12] =   {   0x00,    0x00,      0x00,    0x00,       0x00,       0x00,       0x00,      0x00};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
 int paramCursor = 8;                // set up to start at zero and count to 7 for each parameter selected.
 int paramLocation[8][2];
@@ -301,7 +301,7 @@ void canbusTest() {
 /************************************************************/
 
 bool getSW(int SW) {
-    Serial.println("Button Pressed!");
+    //Serial.println("Button Pressed!");
 
     switch (SW)
     {
@@ -692,13 +692,28 @@ void chan_1() {         // Display the data at customCANID[0]
     //u8g2.setFont(u8g2_font_ncenB14_tr);         // need even bigger text!
     u8g2.setFont(u8g2_font_timB24_tn);
     //u8g2.drawStr(32, 18, "3581");
-    float data = canManager.getData(0);
+    float data = canManager.getData(selectedCANID[0]);
     if (data == -100) {
         u8g2.drawStr(32, 18, "---");
     }
     else {
-        sprintf(buffer, "%01f", data);
-        u8g2.drawStr(32, 18, buffer);
+        //sprintf(buffer, "%.2f", data);
+        switch (selectedCANID[0]) {
+                case 0: case 2: case 3:  // No DP for knock, RPM, Speed
+                    sprintf(buffer, "%.0f", data);
+                    break;
+                case 1: case 4: case 5: case 6:  // 1 DP for boost, temps
+                    sprintf(buffer, "%.1f", data);
+                    break;
+                case 7:  // 2 DP for battV
+                    sprintf(buffer, "%.2f", data);
+                    break;
+                default:    // Default 1dp
+                    sprintf(buffer, "%.1f", data);
+                    break;
+            }
+        //u8g2.drawStr(32, 18, buffer);
+        u8g2.drawStr(108 - u8g2.getStrWidth(buffer), 18, buffer);
     }
 
     u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
@@ -728,44 +743,32 @@ void chan_2() {         // Display the data at customCANID[0] and [1]
 
         u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
         int x = 70;                                 // ez right align
-        float data = canManager.getData(i);
+        float data = canManager.getData(selectedCANID[i]);          // ??? COMMENT FOR UNDERSTANDING!!!
         if (data == -100) {
             u8g2.drawStr(x - u8g2.getStrWidth("---"), 10 + 32*i, "---");
         }
         else {
-            sprintf(buffer, "%.2f", data);
+            //sprintf(buffer, "%.2f", data);
+            switch (selectedCANID[i]) {
+                case 0: case 2: case 3:  // No DP for knock, RPM, Speed
+                    sprintf(buffer, "%.0f", data);
+                    break;
+                case 1: case 4: case 5: case 6:  // 1 DP for boost, temps
+                    sprintf(buffer, "%.1f", data);
+                    break;
+                case 7:  // 2 DP for battV
+                    sprintf(buffer, "%.2f", data);
+                    break;
+                default:    // Default 1dp
+                    sprintf(buffer, "%.1f", data);
+                    break;
+            }
+
             u8g2.drawStr(x - u8g2.getStrWidth(buffer), 10 + 32*i, buffer);
         }
 
         dispUnits(x + 10, 10 + 32*i, i);
     }
-
-    // First Channel
-    // u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
-
-    // float data = canManager.getData(0);
-    // if (data == -100) {
-    //     u8g2.drawStr(32, 18, "---");
-    // }
-    // else {
-    //     sprintf(buffer, "%01f", data);
-    //     u8g2.drawStr(1, 1, buffer);
-    // }
-
-    //dispUnits(86, 10, 0);
-
-    // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[0]], customCANID[selectedCANID[0]]);
-    // u8g2.drawStr(1, 1, buffer);
-    
-    // Second Channel
-    // u8g2.setFont(u8g2_font_ncenB14_tr);         // 14 pt??
-    // u8g2.drawStr(24, 42, "25");
-    //dispUnits(86, 42, 1);
-
-    // u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
-    // sprintf(buffer, "%s, 0x%02X", paramList[selectedCANID[1]], customCANID[selectedCANID[1]]);
-    // u8g2.drawStr(1, 33, buffer);
 
     u8g2.sendBuffer();
     delay(16);
@@ -787,12 +790,26 @@ void chan_4() {         // Display the data at customCANID[0..3]
 
         u8g2.setFont(u8g2_font_bytesize_tr);         // 12 pt??
         int x = 95;                                 // ez right align
-        float data = canManager.getData(i);
+        float data = canManager.getData(selectedCANID[i]);
         if (data == -100) {
             u8g2.drawStr(x - u8g2.getStrWidth("---"), 1 + 16*i, "---");
         }
         else {
-            sprintf(buffer, "%01f", data);
+            //sprintf(buffer, "%.1f", data);
+            switch (selectedCANID[i]) {
+                case 0: case 2: case 3:  // No DP for knock, RPM, Speed
+                    sprintf(buffer, "%.0f", data);
+                    break;
+                case 1: case 4: case 5: case 6:  // 1 DP for boost, temps
+                    sprintf(buffer, "%.1f", data);
+                    break;
+                case 7:  // 2 DP for battV
+                    sprintf(buffer, "%.2f", data);
+                    break;
+                default:    // Default 1dp
+                    sprintf(buffer, "%.1f", data);
+                    break;
+            }
             u8g2.drawStr(x - u8g2.getStrWidth(buffer), 1 + 16*i, buffer);
         }
 
@@ -819,12 +836,26 @@ void chan_8() {         // Display the data at customCANID[0..7]
 
         // Same Font
         int x = 100;                                 // ez right align
-        float data = canManager.getData(i);
+        float data = canManager.getData(selectedCANID[i]);
         if (data == -100) {
             u8g2.drawStr(x - u8g2.getStrWidth("---"), 8*i, "---");
         }
         else {
-            sprintf(buffer, "%01f", data);
+            // sprintf(buffer, "%.1f", data);
+            switch (selectedCANID[i]) {
+                case 0: case 2: case 3:  // No DP for knock, RPM, Speed
+                    sprintf(buffer, "%.0f", data);
+                    break;
+                case 1: case 4: case 5: case 6:  // 1 DP for boost, temps
+                    sprintf(buffer, "%.1f", data);
+                    break;
+                case 7:  // 2 DP for battV
+                    sprintf(buffer, "%.2f", data);
+                    break;
+                default:    // Default 1dp
+                    sprintf(buffer, "%.1f", data);
+                    break;
+            }
             u8g2.drawStr(x - u8g2.getStrWidth(buffer), 8*i, buffer);
         }
 
@@ -989,10 +1020,11 @@ void doMenus() {
 
 void setup() {
     initPins();
+    digitalWrite(SCREEN_ON, LOW);
     u8g2.begin();
     Serial.begin(115200);
-    while (!Serial) { delay(10); }
-    Serial.print("Serial monitor started!");
+    while (!Serial) { delay(10); }              // Remove this after debugging!
+    Serial.println("Serial monitor started!");
     u8g2_prepare();
     canSetup();                                 // Setup CANBUS
     loadCANIDS();                               // Load CANIDs into memory from flash

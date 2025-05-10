@@ -1,6 +1,7 @@
 #include "CANDataManager.h"
 
 void CANDataManager::begin() {
+    // Serial.begin(115200);
     for (int i = 0; i < MAX_CHANNELS; i++) {
         dataCache[i] = -100;
         lastUpdate[i] = 0;
@@ -26,10 +27,10 @@ void CANDataManager::update() {
                         dataCache[i] = message.data[0];
                         break;
                     case 1:
-                        dataCache[i] = (256 * message.data[0] + message.data[1]) / 4.0;
+                        dataCache[i] = message.data[0];
                         break;
                     case 2:
-                        dataCache[i] = message.data[0];
+                        dataCache[i] = (256 * message.data[0] + message.data[1]) / 4.0;
                         break;
                     case 3: case 4: case 5:
                         dataCache[i] = message.data[0] - 40;
@@ -42,6 +43,7 @@ void CANDataManager::update() {
                         break;
                 }
                 lastUpdate[i] = millis();
+                // Serial.print("dataCache[%d] = %f", i, dataCache[i]);
             }
         }
     }
