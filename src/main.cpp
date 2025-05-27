@@ -49,6 +49,13 @@ ETC
 #define MAX_DROPLETS 5  // Number of spill droplets
 
 const bool BOOTSCREEN = true;
+const bool AUTOSLEEP = true;
+
+// Power Management Setup
+unsigned long lastCANactivity = 0;
+const unsigned long SLEEP_TIMEOUT = 5000; // 5 sec of bus inactivity (make configurable?)
+bool isAsleep = false;
+bool powerOn = true;
 
 // CAN Setup
 CanFrame rxFrame;
@@ -100,7 +107,7 @@ int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPress
 // Menus
 int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
 const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
-uint8_t customCANID[12] =   {   0x00,    0x00,      0x00,    0x00,       0x00,       0x00,       0x00,      0x00};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+uint32_t customCANID[12] =   {   0x000,    0x000,      0x000,    0x000,       0x009,       0x000,       0x000,      0x000};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
 int paramCursor = 8;                // set up to start at zero and count to 7 for each parameter selected.
 int paramLocation[8][2];
@@ -203,43 +210,43 @@ void canSetup() {
 //     return -100;
 // }
 
-float getDataOLD(int param) {
-    if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
-        if (rxFrame.identifier == customCANID[param]) {
-            switch (param)
-            {
-            case 1:                 // Boost (MAP) [kPa]
-                return rxFrame.data[2];
-                break;
-            case 2:                 // ENG REV [rpm]
-                return (256*rxFrame.data[2]+rxFrame.data[3])/4;
-                break;
-            case 3:                 // Vehicle Speed [km/h]
-                return rxFrame.data[2];
-                break;
-            case 4:                 // Oil Temp [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 5:                 // Water Temp [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 6:                 // IAT [ºC]
-                return rxFrame.data[2] - 40;
-                break;
-            case 7:                 // Battery Voltage [V]
-                return rxFrame.data[2];
-                break;
+// float getDataOLD(int param) {
+//     if (ESP32Can.readFrame(rxFrame)) {          // 1000ms timeout removed
+//         if (rxFrame.identifier == customCANID[param]) {
+//             switch (param)
+//             {
+//             case 1:                 // Boost (MAP) [kPa]
+//                 return rxFrame.data[2];
+//                 break;
+//             case 2:                 // ENG REV [rpm]
+//                 return (256*rxFrame.data[2]+rxFrame.data[3])/4;
+//                 break;
+//             case 3:                 // Vehicle Speed [km/h]
+//                 return rxFrame.data[2];
+//                 break;
+//             case 4:                 // Oil Temp [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 5:                 // Water Temp [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 6:                 // IAT [ºC]
+//                 return rxFrame.data[2] - 40;
+//                 break;
+//             case 7:                 // Battery Voltage [V]
+//                 return rxFrame.data[2];
+//                 break;
 
-            default:
-                break;
-            }   
-        }
+//             default:
+//                 break;
+//             }   
+//         }
 
-    }
-    else {
-        return -100;    // READ CAN ERROR, DISPLAY ---
-    }
-}
+//     }
+//     else {
+//         return -100;    // READ CAN ERROR, DISPLAY ---
+//     }
+// }
 
 void canbusTest() {
     
@@ -595,13 +602,13 @@ void canID_config() {
     delay(16); // ~60fps
 }
 
-void setCANID() {
+void setCANID() {           // Menu to configure CANID for each parameter 
     u8g2.clearBuffer();
 
     char buffer[50];
     // Add bounds checking
     size_t index = menuPos[1] + 4 * menuPos[0];
-    if (index < 8) {  // Assuming paramList has 8 elements
+    if (index < 8) {                            // Assuming paramList has 8 elements
         u8g2.drawStr(4, 4, "Set CANBUS ID for:");
         snprintf(buffer, sizeof(buffer), "%s", paramList[index]);
         u8g2.drawStr(4, 13, buffer);
@@ -611,26 +618,32 @@ void setCANID() {
     }
 
     u8g2.setFont(u8g2_font_ncenB14_tr);
-    sprintf(buffer, "0x%02X", customCANID[index]);
+    sprintf(buffer, "0x%03X", customCANID[index]);
     u8g2.drawStr(64 - u8g2.getStrWidth(buffer)/2, 32, buffer);
-    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+    u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);   // CHANGE TO MONOSPACE FONT
 
+    // If left, do MSD (M)
+    // If right, do LSD (L)
+    // If neither, do MIDDLE digit (m)
+    // 0xMmL
     int digit;
-    if (getSW(LEFT_SW)) { digit = 1; }
-    else if (getSW(RIGHT_SW)) { digit = 0; }
-    else { digit = -1; }
+    if (getSW(LEFT_SW)) { digit = 2; }          // M
+    else if (getSW(RIGHT_SW)) { digit = 0; }    // L
+    else { digit = 1; }                         // m
 
-    if (digit != -1) {
+    if (digit != -1) {          // ERROR?
         u8g2.setDrawColor(2);
-        u8g2.drawBox(64 - u8g2.getStrWidth(buffer)/2 + 14*digit, 57, 15, 2);        // am tired fix this later
+        u8g2.drawBox(95 - u8g2.getStrWidth(buffer)/2 - 11*digit, 32, 11, 16);        // Put at L, shift LEFT (-digit)
+        // EDIT AFTER FINDING MONOSPACE FONT
 
         if (getSW(UP_SW)) {
-            customCANID[index] = customCANID[index] + 0x01 << (digit*4);
+            customCANID[index] = customCANID[index] + (0x001 << (digit*4));         // damn << has lower precedence than +
+            // Serial.println(0x001 << (digit*4));      // DEBUG
             while(getSW(UP_SW)) {
             }
         }
         if (getSW(DOWN_SW)) {
-            customCANID[index] = customCANID[index] - 0x01 << (digit*4);
+            customCANID[index] = customCANID[index] - (0x001 << (digit*4));
             while(getSW(DOWN_SW)) {
             }
         }
@@ -1018,14 +1031,104 @@ void doMenus() {
     }
 }
 
+// POWER MANAGEMENT!
+void wakeUp() {
+    if (!isAsleep) return; // Already awake
+  
+    Serial.println("Waking up...");
+  
+    // Turn power back on
+    digitalWrite(SCREEN_ON, HIGH);
+    powerOn = true;
+    isAsleep = false;
+    
+    // Give components time to power up
+    delay(100);
+    
+    // Reinitialize ESP32 & Display
+    initPins();
+    u8g2.begin();
+    u8g2_prepare();                             // Setup LCD
+    canSetup();                                 // Setup CANBUS
+    loadCANIDS();                               // Load CANIDs into memory from flash
+    
+    // Show wake-up message
+    if (BOOTSCREEN) {
+        u8g2.clearBuffer();
+        u8g2.drawXBMP(0, 0, 128, 64, boot_logo);
+        u8g2.sendBuffer();
+        delay(2000);
+    }
+    
+    // Update activity time
+    lastCANactivity = millis();
+}
+
+void goToSleep() {
+    Serial.println("Going to sleep...");
+    
+    // Turn off power to LCD and LEDs
+    digitalWrite(SCREEN_ON, LOW);
+    // Change all the pinmodes for the LCD to INPUT to avoid backfeeding (this is hella smart ngl)
+    for (int i = 4; i <= 18; i++) {
+        pinMode(i, INPUT);
+    }
+    pinMode(46, INPUT);
+
+    powerOn = false;
+    isAsleep = true;
+    
+    // Configure wake-up sources
+    // Wake on CAN RX activity (falling edge when message arrives)
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)CAN_RXD, 0); // Cast to gpio, Wake on falling edge (CAN activity)
+    
+    // Also wake up periodically to check for missed activity
+    esp_sleep_enable_timer_wakeup(5 * 1000000); // Wake every 5 seconds
+    
+    // Enter light sleep
+    esp_light_sleep_start();
+    
+    // This line executes after waking up
+    Serial.println("Woke up from sleep");
+
+    // Check wake-up cause
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+        Serial.println("Wake-up caused by CAN activity");
+        // Small delay to ensure CAN message is fully received
+        delay(10);
+    } else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+        Serial.println("Wake-up caused by timer");
+    }
+    
+    // Check if we have CAN activity after waking
+    if (ESP32Can.readFrame(rxFrame, 0)) {
+        wakeUp();
+    }
+}
+
+void checkSleepCondition() {
+    unsigned long timeSinceActivity = millis() - lastCANactivity;
+    
+    // Check if we should go to sleep
+    if (!isAsleep && timeSinceActivity > SLEEP_TIMEOUT) {
+        goToSleep();
+    }
+}
+/* Sleep Setup END*/
+
 void setup() {
     initPins();
     digitalWrite(SCREEN_ON, LOW);
     u8g2.begin();
     Serial.begin(115200);
-    while (!Serial) { delay(10); }              // Remove this after debugging!
-    Serial.println("Serial monitor started!");
-    u8g2_prepare();
+    //while (!Serial) { delay(10); }              // Remove this after debugging!
+    if (Serial) { 
+        delay(50);
+        Serial.println("Serial monitor started!"); 
+    }
+    u8g2_prepare();                             // Setup LCD
     canSetup();                                 // Setup CANBUS
     loadCANIDS();                               // Load CANIDs into memory from flash
 
@@ -1045,6 +1148,8 @@ void setup() {
         u8g2.sendBuffer();
         delay(2000);
     }
+
+    lastCANactivity = millis();
     
 
     for (int i = 0; i < MAX_DROPLETS; i++) droplets[i].active = false;  // Reset droplets
@@ -1057,4 +1162,13 @@ void loop() {
     //canbusTest();
     //displayTest();
     //canID_config();
+    if (AUTOSLEEP) {                            // IF AUTOSLEEP TURNED ON
+        if (ESP32Can.readFrame(rxFrame, 0)) {   // Non-blocking read
+            lastCANactivity = millis();
+            if (isAsleep) { wakeUp(); }
+        } 
+
+        checkSleepCondition();
+    }
+    
 }

@@ -38,6 +38,9 @@ void CANDataManager::update() {
                     case 6:
                         dataCache[i] = message.data[0];
                         break;
+                    case 7:
+                        dataCache[i] = (256 * message.data[0] + message.data[1]) / 100.0;
+                        break;
                     default:
                         dataCache[i] = 8008;
                         break;
