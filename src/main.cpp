@@ -49,7 +49,7 @@ ETC
 #define MAX_DROPLETS 5  // Number of spill droplets
 
 const bool BOOTSCREEN = true;
-const bool AUTOSLEEP = true;
+bool AUTOSLEEP = false;
 
 // Power Management Setup
 unsigned long lastCANactivity = 0;
@@ -107,10 +107,12 @@ int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPress
 // Menus
 int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
 const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
-uint32_t customCANID[12] =   {   0x000,    0x000,      0x000,    0x000,       0x009,       0x000,       0x000,      0x000};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+uint16_t customCANID[12] =   {   0x000,    0x000,      0x000,    0x000,       0x009,       0x000,       0x000,      0x000};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
 int paramCursor = 8;                // set up to start at zero and count to 7 for each parameter selected.
 int paramLocation[8][2];
+
+int digit = 0;                      // For setCANID() cursor
 
 /***************** PREFERENCES *********************/
 void saveCANIDS() {
@@ -617,7 +619,9 @@ void setCANID() {           // Menu to configure CANID for each parameter
         u8g2.drawStr(9, 10, "Invalid Selection");
     }
 
-    u8g2.setFont(u8g2_font_ncenB14_tr);
+    //u8g2.setFont(u8g2_font_ncenB14_tr);
+    //u8g2.setFont(u8g2_font_pfc_serif_v1_1_tf);
+    u8g2.setFont(u8g2_font_profont22_mf);
     sprintf(buffer, "0x%03X", customCANID[index]);
     u8g2.drawStr(64 - u8g2.getStrWidth(buffer)/2, 32, buffer);
     u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);   // CHANGE TO MONOSPACE FONT
@@ -626,14 +630,24 @@ void setCANID() {           // Menu to configure CANID for each parameter
     // If right, do LSD (L)
     // If neither, do MIDDLE digit (m)
     // 0xMmL
-    int digit;
-    if (getSW(LEFT_SW)) { digit = 2; }          // M
-    else if (getSW(RIGHT_SW)) { digit = 0; }    // L
-    else { digit = 1; }                         // m
+    //int digit;
+    // if (getSW(LEFT_SW)) { digit = 2; }          // M
+    // else if (getSW(RIGHT_SW)) { digit = 0; }    // L
+    // else { digit = 1; }                         // m
+    if (getSW(LEFT_SW)) { 
+        digit = mod(digit + 1, 3); 
+        while (getSW(LEFT_SW)) {
+        }
+    }
+    else if (getSW(RIGHT_SW)) { 
+        digit = mod(digit - 1, 3); 
+        while (getSW(RIGHT_SW)) {
+        }
+    }
 
     if (digit != -1) {          // ERROR?
         u8g2.setDrawColor(2);
-        u8g2.drawBox(95 - u8g2.getStrWidth(buffer)/2 - 11*digit, 32, 11, 16);        // Put at L, shift LEFT (-digit)
+        u8g2.drawBox(95 - u8g2.getStrWidth(buffer)/2 - 12*digit, 34, 12, 16);        // Put at L, shift LEFT (-digit)
         // EDIT AFTER FINDING MONOSPACE FONT
 
         if (getSW(UP_SW)) {
@@ -647,6 +661,8 @@ void setCANID() {           // Menu to configure CANID for each parameter
             while(getSW(DOWN_SW)) {
             }
         }
+
+        customCANID[index] = customCANID[index] & 0x7FF;    // Bitmask to 11 bit for standard CAN 2.0A
     }
 
     u8g2.sendBuffer();
@@ -916,6 +932,7 @@ void doMenus() {
     if (getSW(RIGHT_SW)) {
         if (menuPos[2] == 20) {
             menuPos[2] = 21;
+            digit = 1;
         }
     }
 
@@ -983,7 +1000,7 @@ void doMenus() {
             u8g2.clearBuffer();
             if (paramCursor == 8) {
                 saveCANIDS();
-                for (int i = 0; i < sizeof(customCANID); i++) {
+                for (int i = 0; i < sizeof(customCANID) / sizeof(customCANID[0]); i++) {
                     canManager.setCustomID(i, customCANID[i]);       // Load CANIDs into canManager
                 }
                 //u8g2.setDrawColor(0);
@@ -1011,6 +1028,35 @@ void doMenus() {
             }
 
             while (getSW(NEXT_SW)) {
+            }
+        }
+        else if (menuPos[2] == 21) {
+            menuPos[2] = 20;
+            while (getSW(NEXT_SW)) {
+            }
+        }
+        else if (menuPos[2] == 30) {
+            switch (menuPos[1]) 
+            {
+            case 0:
+                break;
+            case 1:
+                break;
+            case 2:         // AUTOSLEEP TOGGLE
+                AUTOSLEEP = !AUTOSLEEP;
+                u8g2.clearBuffer();
+                // Show confirmation message
+                u8g2.setFont(u8g2_font_ncenB14_tr);
+                u8g2.drawStr(15, 29, AUTOSLEEP ? "ON" : "OFF");
+                u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+                u8g2.drawStr(5, 21, "AUTO Sleep Set To:");
+
+                u8g2.sendBuffer();
+                delay(1500);
+
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 00;    // GOTO main menu
             }
         }
     }
@@ -1080,7 +1126,8 @@ void goToSleep() {
     
     // Configure wake-up sources
     // Wake on CAN RX activity (falling edge when message arrives)
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)CAN_RXD, 0); // Cast to gpio, Wake on falling edge (CAN activity)
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)CAN_RXD, 0);   // Cast to gpio, Wake on falling edge (CAN activity)
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)NEXT_SW, 0);   // Cast to gpio, wake on falling edge (Next Button Pressed during sleep)
     
     // Also wake up periodically to check for missed activity
     esp_sleep_enable_timer_wakeup(5 * 1000000); // Wake every 5 seconds
@@ -1133,7 +1180,7 @@ void setup() {
     loadCANIDS();                               // Load CANIDs into memory from flash
 
     canManager.begin();
-    for (int i = 0; i < sizeof(customCANID); i++) {
+    for (int i = 0; i < sizeof(customCANID) / sizeof(customCANID[0]); i++) {
         canManager.setCustomID(i, customCANID[i]);       // Load CANIDs into canManager
     }
 
