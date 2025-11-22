@@ -1,4 +1,4 @@
-**Canbus Commander V1.0**
+**Canbus Commander V1.1**
 
 This is firmware for the custom Apexi FC replacement hardware. 
 
