@@ -5,12 +5,12 @@
 
 // Example pin assignments
 const uint8_t SCREEN_ON = 8;
-const uint8_t UP_SW = 12;
-const uint8_t DOWN_SW = 11;
-const uint8_t LEFT_SW = 48;
-const uint8_t RIGHT_SW = 13;
-const uint8_t NEXT_SW = 14;
-const uint8_t PREV_SW = 1;
+const uint8_t UP_SW = 13;
+const uint8_t DOWN_SW = 14;
+const uint8_t LEFT_SW = 12;
+const uint8_t RIGHT_SW = 48;
+const uint8_t NEXT_SW = 45;
+const uint8_t PREV_SW = 11;
 
 
 // More pin mappings...

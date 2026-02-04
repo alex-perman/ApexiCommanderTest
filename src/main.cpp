@@ -99,7 +99,7 @@ int mod(int dividend, int divisor) {
 // Screen Setup
 //U8G2_KS0108_128X64_F u8g2(U8G2_R0, 8, 9, 10, 11, 4, 5, 6, 7, /*enable=*/ 18, /*dc=*/ 17, /*cs0=*/ 14, /*cs1=*/ 15, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE); 	// Set R/W to low!
 //U8G2_KS0108_128X64_F u8g2(U8G2_R0, 21, 17, 16, 19, 18, 5, 4, 23, /*enable=*/ 26, /*dc=*/ 25, /*cs0=*/ 22, /*cs1=*/ 14, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE);   // Set R/W to low!
-U8G2_KS0108_128X64_F u8g2(U8G2_R0, 4, 5, 6, 7, 15, 16, 17, 18, /*enable=*/ 10, /*dc=*/ 9, /*cs0=*/ 3, /*cs1=*/ 46, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE);   // Set R/W to low!
+U8G2_KS0108_128X64_F u8g2(U8G2_R0, 4, 5, 6, 7, 15, 16, 17, 18, /*enable=*/ 10, /*dc=*/ 9, /*cs0=*/ 46, /*cs1=*/ 3, /*cs2=*/ U8X8_PIN_NONE, /* reset=*/  U8X8_PIN_NONE);   // Set R/W to low!
 
 // Buttons
 int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPresses = 0, nextPresses = 0;
@@ -107,7 +107,8 @@ int upPresses = 0, downPresses = 0, leftPresses = 0, rightPresses = 0, prevPress
 // Menus
 int menuPos[3] = {0, 0, 0};         // X, Y, PAGE {page0 = home, page1 = settings, page2 = etc, ...}
 const char * paramList[8] = {"Knock", "Boost", "Eng Rev", "Speed", "Oil Temp", "Wtr Temp", "Air Temp", "BatVolt"};      // Array of parameters!
-uint16_t customCANID[12] =   {   0x000,    0x000,      0x000,    0x000,       0x009,       0x000,       0x000,      0x000};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+uint16_t customCANID[12]  = {   0x000,    0x000,      0x000,    0x000,       0x000,       0x000,       0x000,      0x000};      // Stores *CUSTOM* CANBUS ID of all parameters as set by user
+uint8_t obdCANID[12]     = { 0x11,   0x0B,  0x0C,   0x0D,   0x5C,  0x05,  0x0F,   0x42};                                // Stores OBD2 CAN IDs
 int selectedCANID[8];               // Stores indicies of customCANID[] that are selected by user to be displayed. Index 0 is dataNum1, up to index 7 is dataNum8
 int paramCursor = 8;                // set up to start at zero and count to 7 for each parameter selected.
 int paramLocation[8][2];
@@ -546,12 +547,12 @@ void menuSelection(int menuNum) {
         xShift = 40;
 
         if (getSW(UP_SW)) {
-            menuPos[1] = mod(menuPos[1] - 1, 3);
+            menuPos[1] = mod(menuPos[1] - 1, 4);
             while (getSW(UP_SW)) {
             }
         }
         if (getSW(DOWN_SW)) {
-            menuPos[1] = mod(menuPos[1] + 1, 3);
+            menuPos[1] = mod(menuPos[1] + 1, 4);
             while (getSW(DOWN_SW)) {
             }
         }
@@ -1057,6 +1058,23 @@ void doMenus() {
                 menuPos[0] = 0;
                 menuPos[1] = 0;
                 menuPos[2] = 00;    // GOTO main menu
+                break;
+            case 3:
+                canManager.useOBD2 = !canManager.useOBD2;
+                u8g2.clearBuffer();
+                // Show confirmation message
+                u8g2.setFont(u8g2_font_ncenB14_tr);
+                u8g2.drawStr(15, 29, canManager.useOBD2 ? "YES" : "NO");
+                u8g2.setFont(u8g2_font_pfc_sans_v1_1_tf);
+                u8g2.drawStr(5, 21, "Use OBD2:");
+
+                u8g2.sendBuffer();
+                delay(1500);
+
+                menuPos[0] = 0;
+                menuPos[1] = 0;
+                menuPos[2] = 00;    // GOTO main menu
+                break;
             }
         }
     }
@@ -1130,7 +1148,7 @@ void goToSleep() {
     esp_sleep_enable_ext0_wakeup((gpio_num_t)NEXT_SW, 0);   // Cast to gpio, wake on falling edge (Next Button Pressed during sleep)
     
     // Also wake up periodically to check for missed activity
-    esp_sleep_enable_timer_wakeup(5 * 1000000); // Wake every 5 seconds
+    esp_sleep_enable_timer_wakeup(5 * 1000); // Wake every 5 seconds
     
     // Enter light sleep
     esp_light_sleep_start();
@@ -1149,7 +1167,7 @@ void goToSleep() {
         Serial.println("Wake-up caused by timer");
     }
     
-    // Check if we have CAN activity after waking
+    // Check if we have CAN activity after waking & ECU is active
     if (ESP32Can.readFrame(rxFrame, 0)) {
         wakeUp();
     }
@@ -1180,8 +1198,15 @@ void setup() {
     loadCANIDS();                               // Load CANIDs into memory from flash
 
     canManager.begin();
+
+    // Load custom CAN IDs
     for (int i = 0; i < sizeof(customCANID) / sizeof(customCANID[0]); i++) {
-        canManager.setCustomID(i, customCANID[i]);       // Load CANIDs into canManager
+        canManager.setCustomID(i, customCANID[i]);
+    }
+
+    // Load OBD2 PIDs for each channel based on selectedCANID mapping
+    for (int i = 0; i < sizeof(obdCANID) / sizeof(obdCANID[0]); i++) {
+        canManager.setOBDPID(i, obdCANID[i]);
     }
 
     digitalWrite(SCREEN_ON, HIGH);
@@ -1214,6 +1239,11 @@ void loop() {
             lastCANactivity = millis();
             if (isAsleep) { wakeUp(); }
         } 
+        // if (canManager.isDataFresh(0)) {
+        //     lastCANactivity = millis();
+        //     if (isAsleep) { wakeUp(); }
+        // }
+        else if (getSW(NEXT_SW) || getSW(PREV_SW) || getSW(UP_SW) || getSW(DOWN_SW) || getSW(LEFT_SW) || getSW(RIGHT_SW)) { wakeUp(); }
 
         checkSleepCondition();
     }
